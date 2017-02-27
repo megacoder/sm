@@ -1,0 +1,120 @@
+#!/usr/bin/python
+# vim: noet sw=4 ts=4
+# Process taken from:
+#	http://www.ubuntugeek.com/how-change-display-resolution-settings-using-xrandr.html
+
+import	shlex
+import	subprocess
+import	sys
+import	os
+
+class	ScreenMode( object ):
+
+	SCREEN  = 'VGA1'
+	X       = 1920
+	Y       = 1080
+	VERSION = '1.0.0'
+
+	def	__init__( self, dont = False, screen = None ):
+		if screen is None:
+			self.screen = ScreenMode.SCREEN
+		else:
+			self.screen = screen
+		self.dont = dont
+		self.verbose= False
+		self.X = ScreenMode.X
+		self.Y = ScreenMode.Y
+		return
+
+	def	do_this( self, cmd, msg = 'FAILED' ):
+		if self.dont:
+			print ' '.join( cmd )
+		else:
+			if self.verbose:
+				print '%s' % ' '.join(cmd)
+			try:
+				subprocess.check_call( cmd )
+			except Exception, e:
+				print >>sys.stderr, msg
+		return
+
+	def	modeline( self, x = None, y = None ):
+		if x is None:
+			x = self.X
+		if y is None:
+			y = self.Y
+		cvt = subprocess.Popen(
+			[ '/usr/bin/cvt', str(x), str(y) ],
+			stdout = subprocess.PIPE
+		)
+		name = None
+		setting = None
+		for line in cvt.stdout:
+			line = line.split( '#', 1 )[0].strip()
+			if line.startswith( 'Modeline' ):
+				args = shlex.split( line )
+				name = args[1]
+				setting = args[2:]
+				# print (name,setting)
+				break
+		if name is None:
+			print >>sys.stderr, 'Cannot compute the mode line for %dx%d.' % (X,Y)
+			sys.exit(1)
+		return (name,setting)
+
+	def	apply( self, name, modeline ):
+		cmd = [ '/usr/bin/xrandr', '--newmode', name ]
+		cmd.extend(modeline)
+		self.do_this(
+			cmd
+		)
+		self.do_this(
+			[ '/usr/bin/xrandr', '--addmode', self.screen, name ]
+		)
+		self.do_this(
+			[ '/usr/bin/xrandr', '--output', self.screen, '--mode', name ]
+		)
+		return
+
+if __name__ == '__main__':
+	import	optparse
+
+	prog = os.path.basename( sys.argv[0] )
+	version = ScreenMode.VERSION
+	usage = 'usage: %prog [options] X Y'
+	p = optparse.OptionParser(
+		prog = prog,
+		usage = usage,
+		description = '''Compute a modeline (if possible) for the (X,Y)
+		geometry.'''
+	)
+	p.add_option(
+		'-n',
+		'--nope',
+		dest='dont',
+		action='store_true',
+		default=False,
+		help="Don't really change anything."
+	)
+	p.add_option(
+		'-v',
+		'--verbose',
+		dest='verbose',
+		action='store_true',
+		default=False,
+		help="Be rather chatty."
+	)
+	(opts,args) = p.parse_args()
+	sm = ScreenMode( dont = opts.dont )
+	if len(args) < 2:
+		name,modeline = sm.modeline()
+		# print '%s: %s' % (name, ' '.join(modeline))
+		sm.apply( name, modeline )
+	else:
+		while len(args) >= 2:
+			X = args.pop(0)
+			Y = args.pop(0)
+			name,modeline = sm.modeline( X, Y )
+			# print '%s: %s' % (name, ' '.join(modeline))
+			sm.apply( name, modeline )
+	sys.exit(0)
